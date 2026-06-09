@@ -47,8 +47,7 @@ def render_origin_badge(origin: str) -> str:
         "Meta Ads (Trafego Pago)": "#3b82f6", 
         "Indicação": "#10b981"
     }
-    color = origin_colors.get(origin, "#64748b")
-    return f'<span class="badge" style="background-color: {color}20; color: {color}; border-color: {color}40;">🎯 {origin}</span>'
+    return f'🎯 {origin}'
 
 # Configuração da página Streamlit
 st.set_page_config(
