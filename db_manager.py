@@ -177,22 +177,29 @@ class DatabaseManager:
         if not records:
             return pd.DataFrame(columns=[
                 'ID', 'Nome', 'Data Contato', 'Material de Interesse', 'Valor', 
-                'Status Consulta', 'Status Cirurgia', 'Observações', 
+                'Status Consulta', 'Status Cirurgia', 'Observações', 'Origem',
                 'Criado Por', 'Criado Em', 'Atualizado Por', 'Atualizado Em'
             ])
             
         df = pd.DataFrame(records)
         df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce').fillna(0.0)
+        
+        # Garantir que a coluna Origem exista
+        if 'Origem' not in df.columns:
+            df['Origem'] = 'Não informada'
+            
         return df
 
     def add_lead(self, nome: str, data_contato: str, material: str, valor: float, 
-                 status_consulta: str, status_cirurgia: str, observacoes: str, criado_por: str) -> str:
-        """Adiciona um novo lead na aba 'leads'."""
+                 origem: str, status_consulta: str, status_cirurgia: str, 
+                 observacoes: str, criado_por: str) -> str:
+        """Adiciona um novo lead na aba 'leads' com suporte a origem."""
         payload = {
             "nome": nome,
             "data_contato": data_contato,
             "material": material,
             "valor": float(valor),
+            "origem": origem,  # Novo campo de origem
             "status_consulta": status_consulta,
             "status_cirurgia": status_cirurgia,
             "observacoes": observacoes,
@@ -202,7 +209,7 @@ class DatabaseManager:
         return result.get("id", "")
 
     def update_lead(self, lead_id: str, updated_data: dict, atualizado_por: str) -> bool:
-        """Atualiza os campos de um lead existente."""
+        """Atualiza os campos de um lead existente, incluindo origem."""
         payload = {
             "lead_id": lead_id,
             "updated_data": updated_data,
@@ -224,6 +231,41 @@ class DatabaseManager:
         result = self.send_request("deleteLead", payload)
         return result.get("success", False)
 
+    # --- MÉTODOS ADICIONAIS PARA ANÁLISE POR ORIGEM ---
+
+    def get_leads_by_origin(self, origem: str = None) -> pd.DataFrame:
+        """Retorna leads filtrados por origem."""
+        df = self.get_leads()
+        if df.empty:
+            return df
+        
+        if origem and origem != "Todas":
+            df = df[df['Origem'] == origem]
+        
+        return df
+
+    def get_origin_statistics(self) -> dict:
+        """Retorna estatísticas agregadas por origem."""
+        df = self.get_leads()
+        if df.empty:
+            return {}
+        
+        stats = {}
+        for origem in df['Origem'].unique():
+            df_origem = df[df['Origem'] == origem]
+            stats[origem] = {
+                'total_leads': len(df_origem),
+                'valor_total': df_origem['Valor'].sum(),
+                'ticket_medio': df_origem['Valor'].mean(),
+                'consultas_realizadas': len(df_origem[df_origem['Status Consulta'] == 'Realizado']),
+                'cirurgias_realizadas': len(df_origem[df_origem['Status Cirurgia'] == 'Realizado']),
+                'faturamento_confirmado': df_origem[df_origem['Status Cirurgia'] == 'Realizado']['Valor'].sum(),
+                'taxa_conversao_consulta': (len(df_origem[df_origem['Status Consulta'] == 'Realizado']) / len(df_origem) * 100) if len(df_origem) > 0 else 0,
+                'taxa_conversao_cirurgia': (len(df_origem[df_origem['Status Cirurgia'] == 'Realizado']) / len(df_origem) * 100) if len(df_origem) > 0 else 0
+            }
+        
+        return stats
+
     # --- VIGILÂNCIA E AUDITORIA (LOGS) ---
 
     def get_logs(self) -> pd.DataFrame:
@@ -240,3 +282,14 @@ class DatabaseManager:
         df = pd.DataFrame(records)
         df = df.iloc[::-1].reset_index(drop=True)
         return df
+
+    # --- MÉTODOS DE VALIDAÇÃO ---
+
+    def validate_origin(self, origem: str) -> bool:
+        """Valida se a origem é uma das opções permitidas."""
+        valid_origins = ["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"]
+        return origem in valid_origins
+
+    def get_valid_origins(self) -> list:
+        """Retorna a lista de origens válidas."""
+        return ["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"]

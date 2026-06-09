@@ -42,7 +42,7 @@ function setupDatabase() {
       leadsSheet = ss.insertSheet('leads');
       var headers = [
         'ID', 'Nome', 'Data Contato', 'Material de Interesse', 'Valor', 
-        'Status Consulta', 'Status Cirurgia', 'Observações', 
+        'Status Consulta', 'Status Cirurgia', 'Observações', 'Origem',
         'Criado Por', 'Criado Em', 'Atualizado Por', 'Atualizado Em'
       ];
       leadsSheet.appendRow(headers);
@@ -206,6 +206,7 @@ function addLead(payload) {
     payload.status_consulta,
     payload.status_cirurgia,
     payload.observacoes,
+    payload.origem || "Não informada", // Adicionando campo origem
     payload.criado_por,
     timestamp,
     payload.criado_por,
@@ -219,7 +220,7 @@ function addLead(payload) {
     payload.criado_por, 
     "CRIAR", 
     leadId, 
-    "Lead '" + payload.nome + "' criado com Status Consulta '" + payload.status_consulta + "' e Cirurgia '" + payload.status_cirurgia + "'",
+    "Lead '" + payload.nome + "' criado com Status Consulta '" + payload.status_consulta + "' e Cirurgia '" + payload.status_cirurgia + "' (Origem: " + (payload.origem || "Não informada") + ")",
     "", "", ""
   );
   

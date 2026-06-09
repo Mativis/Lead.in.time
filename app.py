@@ -40,6 +40,16 @@ def format_br_date(date_val):
     except Exception:
         return str(date_val)
 
+def render_origin_badge(origin: str) -> str:
+    """Retorna o código HTML para a badge correspondente à origem do lead."""
+    origin_colors = {
+        "Instagram (Trafego Orgânico)": "#8b5cf6",
+        "Meta Ads (Trafego Pago)": "#3b82f6", 
+        "Indicação": "#10b981"
+    }
+    color = origin_colors.get(origin, "#64748b")
+    return f'<span class="badge" style="background-color: {color}20; color: {color}; border-color: {color}40;">🎯 {origin}</span>'
+
 # Configuração da página Streamlit
 st.set_page_config(
     page_title="Lead.in.time - CRM de Leads",
@@ -307,7 +317,6 @@ if not db.is_configured():
         st.code("""
 leads:
 ID | Nome | Data Contato | Material de Interesse | ...
-
 users:
 Username | Nome | Password Hash | Role
 
@@ -437,6 +446,18 @@ if page == "📈 Dashboards e Relatórios":
                 ignore_date = st.checkbox("Ver todo o histórico (ignorar filtro de data)", value=False)
             st.markdown("</div>", unsafe_allow_html=True)
             
+            # Filtro de Origem
+            st.markdown("<div class='form-container' style='margin-bottom: 25px;'>", unsafe_allow_html=True)
+            st.subheader("📊 Filtro de Origem do Lead")
+            col_o1, col_o2 = st.columns([2, 1])
+            with col_o1:
+                origens_disponiveis = ["Todas", "Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"]
+                origem_filter = st.selectbox("Origem do Lead", origens_disponiveis)
+            with col_o2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                show_origin_stats = st.checkbox("Mostrar estatísticas por origem", value=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
             # Converter os valores do date_input para Timestamp
             data_de_ts = pd.to_datetime(data_de)
             data_ate_ts = pd.to_datetime(data_ate) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
@@ -450,8 +471,12 @@ if page == "📈 Dashboards e Relatórios":
                     (df_leads_with_dates["_Datetime"] <= data_ate_ts)
                 ]
             
+            # Aplicar filtro de origem
+            if origem_filter != "Todas":
+                df_leads_dash = df_leads_dash[df_leads_dash["Origem"] == origem_filter]
+            
             if df_leads_dash.empty:
-                st.warning("Nenhum lead encontrado para o período selecionado. Tente ampliar o intervalo de datas.")
+                st.warning("Nenhum lead encontrado para o período e origem selecionados. Tente ampliar os filtros.")
             else:
                 # Cálculos de Métricas
                 total_leads = len(df_leads_dash)
@@ -473,10 +498,11 @@ if page == "📈 Dashboards e Relatórios":
                 taxa_cirurgia_consulta = (cirurgias_realizadas / consultas_realizadas * 100) if consultas_realizadas > 0 else 0.0
                 
                 # Inicializar Abas
-                tab_resumo, tab_graficos, tab_procedimentos, tab_exportar = st.tabs([
+                tab_resumo, tab_graficos, tab_procedimentos, tab_origem, tab_exportar = st.tabs([
                     "📊 Resumo & Funil", 
                     "📈 Gráficos & Tendências", 
-                    "🏷️ Desempenho por Procedimento", 
+                    "🏷️ Desempenho por Procedimento",
+                    "🎯 Análise por Origem",
                     "📥 Relatório & Exportação"
                 ])
                 
@@ -760,7 +786,118 @@ if page == "📈 Dashboards e Relatórios":
                         
                         st.dataframe(df_material_display, use_container_width=True)
                 
-                # --- TAB 4: RELATÓRIO & EXPORTAÇÃO ---
+                # --- TAB 4: ANÁLISE POR ORIGEM ---
+                with tab_origem:
+                    st.subheader("🎯 Análise de Performance por Origem do Lead")
+                    st.markdown("Compare o desempenho de cada canal de aquisição e identifique as origens mais rentáveis.")
+                    
+                    if "Origem" not in df_leads_dash.columns or df_leads_dash["Origem"].dropna().empty:
+                        st.warning("Nenhum dado de origem disponível para análise. Cadastre leads com origem para visualizar métricas.")
+                    else:
+                        # Agrupar dados por origem
+                        df_origem = df_leads_dash.groupby("Origem").agg(
+                            Total_Leads=("ID", "count"),
+                            Valor_Total=("Valor", "sum"),
+                            Consultas_Realizadas=("Status Consulta", lambda x: (x == "Realizado").sum()),
+                            Cirurgias_Realizadas=("Status Cirurgia", lambda x: (x == "Realizado").sum()),
+                            Faturamento_Confirmado=("Valor", lambda x: x[df_leads_dash["Status Cirurgia"] == "Realizado"].sum())
+                        ).reset_index()
+                        
+                        # Calcular métricas adicionais
+                        df_origem["Ticket_Medio"] = df_origem["Valor_Total"] / df_origem["Total_Leads"]
+                        df_origem["Taxa_Conversao_Consulta"] = (df_origem["Consultas_Realizadas"] / df_origem["Total_Leads"] * 100)
+                        df_origem["Taxa_Conversao_Cirurgia"] = (df_origem["Cirurgias_Realizadas"] / df_origem["Total_Leads"] * 100)
+                        df_origem["ROI_Potencial"] = df_origem["Valor_Total"] / df_origem["Total_Leads"]
+                        
+                        # Gráfico de barras comparativo
+                        col_g1, col_g2 = st.columns(2)
+                        
+                        with col_g1:
+                            # Gráfico: Total de Leads por Origem
+                            chart_leads_origin = alt.Chart(df_origem).mark_bar(cornerRadiusEnd=4).encode(
+                                x=alt.X("Origem:N", title="Origem", sort="-y"),
+                                y=alt.Y("Total_Leads:Q", title="Quantidade de Leads"),
+                                color=alt.Color("Origem:N", scale=alt.Scale(
+                                    domain=["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"],
+                                    range=["#8b5cf6", "#3b82f6", "#10b981"]
+                                )),
+                                tooltip=["Origem", "Total_Leads", "Valor_Total", "Taxa_Conversao_Cirurgia"]
+                            ).properties(
+                                title="Volume de Leads por Canal",
+                                height=300
+                            )
+                            st.altair_chart(chart_leads_origin, use_container_width=True)
+                            
+                        with col_g2:
+                            # Gráfico: Faturamento Confirmado por Origem
+                            chart_revenue_origin = alt.Chart(df_origem).mark_bar(cornerRadiusEnd=4).encode(
+                                x=alt.X("Origem:N", title="Origem", sort="-y"),
+                                y=alt.Y("Faturamento_Confirmado:Q", title="Faturamento Confirmado (R$)"),
+                                color=alt.Color("Origem:N", scale=alt.Scale(
+                                    domain=["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"],
+                                    range=["#8b5cf6", "#3b82f6", "#10b981"]
+                                )),
+                                tooltip=["Origem", "Faturamento_Confirmado", "Total_Leads"]
+                            ).properties(
+                                title="Faturamento Confirmado por Canal",
+                                height=300
+                            )
+                            st.altair_chart(chart_revenue_origin, use_container_width=True)
+                        
+                        # Tabela detalhada de performance
+                        st.markdown("### 📊 Performance Detalhada por Canal")
+                        df_origem_display = df_origem.copy()
+                        df_origem_display["Valor_Total"] = df_origem_display["Valor_Total"].apply(lambda v: f"R$ {v:,.2f}")
+                        df_origem_display["Ticket_Medio"] = df_origem_display["Ticket_Medio"].apply(lambda v: f"R$ {v:,.2f}")
+                        df_origem_display["Faturamento_Confirmado"] = df_origem_display["Faturamento_Confirmado"].apply(lambda v: f"R$ {v:,.2f}")
+                        df_origem_display["Taxa_Conversao_Consulta"] = df_origem_display["Taxa_Conversao_Consulta"].apply(lambda v: f"{v:.1f}%")
+                        df_origem_display["Taxa_Conversao_Cirurgia"] = df_origem_display["Taxa_Conversao_Cirurgia"].apply(lambda v: f"{v:.1f}%")
+                        
+                        df_origem_display.columns = [
+                            "Origem", "Total Leads", "Valor Total", "Consultas Realizadas", 
+                            "Cirurgias Realizadas", "Faturamento Confirmado", "Ticket Médio", 
+                            "Taxa Conversão Consulta", "Taxa Conversão Cirurgia", "ROI Potencial"
+                        ]
+                        
+                        st.dataframe(df_origem_display, use_container_width=True)
+                        
+                        # Cards de destaque por origem
+                        st.markdown("### 🏆 Destaques por Canal")
+                        col_insight1, col_insight2, col_insight3 = st.columns(3)
+                        
+                        # Identificar melhor canal por faturamento
+                        best_revenue = df_origem.loc[df_origem["Faturamento_Confirmado"].idxmax()]
+                        best_conversion = df_origem.loc[df_origem["Taxa_Conversao_Cirurgia"].idxmax()]
+                        most_leads = df_origem.loc[df_origem["Total_Leads"].idxmax()]
+                        
+                        with col_insight1:
+                            st.markdown(f"""
+                            <div class="metric-card-financial card-green">
+                                <div class="metric-title">💰 Maior Faturamento</div>
+                                <div class="metric-value">{best_revenue['Origem']}</div>
+                                <div class="metric-desc">R$ {best_revenue['Faturamento_Confirmado']:,.2f} confirmados</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        with col_insight2:
+                            st.markdown(f"""
+                            <div class="metric-card-financial card-blue">
+                                <div class="metric-title">📈 Melhor Conversão</div>
+                                <div class="metric-value">{best_conversion['Origem']}</div>
+                                <div class="metric-desc">{best_conversion['Taxa_Conversao_Cirurgia']:.1f}% de conversão</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        with col_insight3:
+                            st.markdown(f"""
+                            <div class="metric-card-financial card-yellow">
+                                <div class="metric-title">📊 Maior Volume</div>
+                                <div class="metric-value">{most_leads['Origem']}</div>
+                                <div class="metric-desc">{most_leads['Total_Leads']} leads captados</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
+                # --- TAB 5: RELATÓRIO & EXPORTAÇÃO ---
                 with tab_exportar:
                     st.subheader("Exportador Avançado de Dados")
                     
@@ -790,7 +927,7 @@ if page == "📈 Dashboards e Relatórios":
                         )
                     
                     # Filtros adicionais de busca e valor
-                    col_ef4, col_ef5 = st.columns([2, 2])
+                    col_ef4, col_ef5, col_ef6 = st.columns([2, 2, 2])
                     with col_ef4:
                         export_busca = st.text_input("🔍 Buscar por nome do Lead", placeholder="Digite um nome para filtrar...", key="exp_b")
                     with col_ef5:
@@ -807,12 +944,21 @@ if page == "📈 Dashboards e Relatórios":
                             format="R$ %.2f",
                             key="exp_v"
                         )
+                    with col_ef6:
+                        origens_unicas = sorted(list(df_leads_dash["Origem"].unique()))
+                        export_origem = st.multiselect(
+                            "Filtrar por Origem do Lead", 
+                            origens_unicas, 
+                            default=origens_unicas,
+                            key="exp_o"
+                        )
                     
                     # Filtragem no DataFrame
                     filtered_export_df = df_leads_dash[
                         (df_leads_dash["Status Consulta"].isin(export_consulta)) &
                         (df_leads_dash["Status Cirurgia"].isin(export_cirurgia)) &
                         (df_leads_dash["Material de Interesse"].isin(export_material)) &
+                        (df_leads_dash["Origem"].isin(export_origem)) &
                         (df_leads_dash["Valor"] >= export_valores[0]) &
                         (df_leads_dash["Valor"] <= export_valores[1])
                     ]
@@ -829,10 +975,14 @@ if page == "📈 Dashboards e Relatórios":
                     display_export_df["Valor"] = display_export_df["Valor"].apply(lambda v: f"R$ {v:,.2f}")
                     # Formatar a data para exibição
                     display_export_df["Data Contato"] = display_export_df["Data Contato"].apply(format_br_date)
-                    st.dataframe(display_export_df[[
-                        "Nome", "Data Contato", "Material de Interesse", "Valor", 
-                        "Status Consulta", "Status Cirurgia", "Observações", "Criado Por", "Criado Em"
-                    ]], use_container_width=True)
+                    
+                    # Selecionar colunas para exibição
+                    cols_to_display = ["Nome", "Data Contato", "Material de Interesse", "Valor", 
+                                     "Status Consulta", "Status Cirurgia", "Origem", "Observações", 
+                                     "Criado Por", "Criado Em"]
+                    available_cols = [col for col in cols_to_display if col in display_export_df.columns]
+                    
+                    st.dataframe(display_export_df[available_cols], use_container_width=True)
                     
                     # Botão de exportação
                     cols_to_drop = ["_Datetime", "Mes_Ano"]
@@ -852,13 +1002,15 @@ elif page == "🗂️ Gerenciador de Leads":
     st.markdown("Visualize, busque, edite e gerencie as informações de leads.")
     
     # Campo de busca e filtros rápidos
-    col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
+    col_s1, col_s2, col_s3, col_s4 = st.columns([2, 1, 1, 1])
     with col_s1:
         search_query = st.text_input("🔍 Buscar lead por Nome ou Observação", placeholder="Digite para buscar...")
     with col_s2:
         status_c_filter = st.selectbox("Status Consulta", ["Todos", "Pendente", "Realizado", "Não realizado"])
     with col_s3:
         status_s_filter = st.selectbox("Status Cirurgia", ["Todos", "Pendente", "Realizado", "Não realizado"])
+    with col_s4:
+        origem_filter = st.selectbox("Origem", ["Todas", "Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"])
         
     # Aplicar filtros
     filtered_df = df_leads.copy()
@@ -875,6 +1027,9 @@ elif page == "🗂️ Gerenciador de Leads":
         
     if status_s_filter != "Todos":
         filtered_df = filtered_df[filtered_df["Status Cirurgia"] == status_s_filter]
+    
+    if origem_filter != "Todas":
+        filtered_df = filtered_df[filtered_df["Origem"] == origem_filter]
         
     if filtered_df.empty:
         st.info("Nenhum lead encontrado com os filtros aplicados.")
@@ -893,11 +1048,12 @@ elif page == "🗂️ Gerenciador de Leads":
             # Badge de status de consulta e cirurgia para colocar no título do expander
             badge_c = render_status_badge(row["Status Consulta"])
             badge_s = render_status_badge(row["Status Cirurgia"])
+            badge_o = render_origin_badge(row["Origem"] if pd.notna(row["Origem"]) else "Não informada")
             
             # Formatar a data para exibição
             data_formatada = format_br_date(row["Data Contato"])
             
-            with st.expander(f"👤 {lead_name} — {row['Material de Interesse']} (R$ {float(row['Valor']):,.2f})", expanded=(st.session_state.edit_lead_id == lead_id)):
+            with st.expander(f"👤 {lead_name} — {row['Material de Interesse']} (R$ {float(row['Valor']):,.2f}) {badge_o}", expanded=(st.session_state.edit_lead_id == lead_id)):
                 # Detalhamento do Lead em Colunas
                 col_info1, col_info2, col_info3 = st.columns(3)
                 
@@ -906,6 +1062,8 @@ elif page == "🗂️ Gerenciador de Leads":
                     st.markdown(f"**Data de Contato:** {data_formatada}")
                     st.markdown(f"**Material de Interesse:** {row['Material de Interesse']}")
                     st.markdown(f"**Valor do Lead:** R$ {float(row['Valor']):,.2f}")
+                    if pd.notna(row.get("Origem")):
+                        st.markdown(f"**Origem:** {row['Origem']}")
                     
                 with col_info2:
                     st.markdown(f"**Status de Consulta:**")
@@ -987,6 +1145,12 @@ elif page == "🗂️ Gerenciador de Leads":
                         val_material = st.text_input("Material de Interesse", value=str(row["Material de Interesse"]))
                         val_valor = st.number_input("Valor (R$)", min_value=0.0, value=float(row["Valor"]), format="%.2f")
                         
+                        val_origem = st.selectbox(
+                            "Origem do Lead", 
+                            ["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"],
+                            index=["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"].index(row["Origem"] if pd.notna(row["Origem"]) else "Instagram (Trafego Orgânico)")
+                        )
+                        
                         val_consulta = st.selectbox(
                             "Status de Consulta", 
                             ["Pendente", "Realizado", "Não realizado"], 
@@ -1017,6 +1181,7 @@ elif page == "🗂️ Gerenciador de Leads":
                                         "Data Contato": data_formatted,
                                         "Material de Interesse": val_material,
                                         "Valor": val_valor,
+                                        "Origem": val_origem,
                                         "Status Consulta": val_consulta,
                                         "Status Cirurgia": val_cirurgia,
                                         "Observações": val_obs
@@ -1050,6 +1215,13 @@ elif page == "➕ Adicionar Lead":
             material_lead = st.text_input("Material de Interesse", placeholder="Ex: Prótese de Silicone, Lentes de Contato...")
             valor_lead = st.number_input("Valor Estimado (R$)", min_value=0.0, step=100.0, value=0.0, format="%.2f")
             
+            # Campo de origem do lead
+            origem_lead = st.selectbox(
+                "Origem do Lead", 
+                ["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"],
+                help="Selecione o canal através do qual o lead foi captado"
+            )
+            
             col_s1, col_s2 = st.columns(2)
             with col_s1:
                 status_c = st.selectbox("Status de Consulta", ["Pendente", "Realizado", "Não realizado"])
@@ -1074,6 +1246,7 @@ elif page == "➕ Adicionar Lead":
                                 data_contato=data_formatted,
                                 material=material_lead,
                                 valor=valor_lead,
+                                origem=origem_lead,  # Adicionando a origem
                                 status_consulta=status_c,
                                 status_cirurgia=status_s,
                                 observacoes=obs_lead,
