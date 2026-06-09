@@ -19,6 +19,27 @@ def parse_date_safely(date_val):
         except Exception:
             return pd.NaT
 
+def format_br_date(date_val):
+    """Formata uma data para o padrão brasileiro DD/MM/YYYY"""
+    if pd.isna(date_val) or not date_val:
+        return "Data não informada"
+    try:
+        # Se for string, tenta converter
+        if isinstance(date_val, str):
+            date_obj = parse_date_safely(date_val)
+        else:
+            date_obj = date_val
+        
+        # Se for Timestamp ou datetime, formata
+        if pd.notna(date_obj):
+            if hasattr(date_obj, 'strftime'):
+                return date_obj.strftime("%d/%m/%Y")
+            else:
+                return str(date_obj)
+        return "Data inválida"
+    except Exception:
+        return str(date_val)
+
 # Configuração da página Streamlit
 st.set_page_config(
     page_title="Lead.in.time - CRM de Leads",
@@ -384,7 +405,7 @@ if page == "📈 Dashboards e Relatórios":
     if df_leads.empty:
         st.warning("Nenhum lead cadastrado no momento. Insira registros para visualizar gráficos e métricas.")
     else:
-        # Converter coluna de data para objeto datetime de forma robusta (CORRIGIDO)
+        # Converter coluna de data para objeto datetime de forma robusta
         df_leads_with_dates = df_leads.copy()
         
         # Aplicar parse_date_safely e garantir que seja timezone-naive
@@ -403,7 +424,7 @@ if page == "📈 Dashboards e Relatórios":
             min_date_val = df_leads_with_dates["_Datetime"].min().date()
             max_date_val = df_leads_with_dates["_Datetime"].max().date()
             
-            # Filtro de Data Global (CORRIGIDO)
+            # Filtro de Data Global
             st.markdown("<div class='form-container' style='margin-bottom: 25px;'>", unsafe_allow_html=True)
             st.subheader("📅 Filtro de Período")
             col_d1, col_d2, col_d3 = st.columns([2, 2, 2])
@@ -416,12 +437,11 @@ if page == "📈 Dashboards e Relatórios":
                 ignore_date = st.checkbox("Ver todo o histórico (ignorar filtro de data)", value=False)
             st.markdown("</div>", unsafe_allow_html=True)
             
-            # CORREÇÃO: Converter os valores do date_input para Timestamp mantendo consistência
-            # Garantir que data_de e data_ate sejam Timestamps
+            # Converter os valores do date_input para Timestamp
             data_de_ts = pd.to_datetime(data_de)
-            data_ate_ts = pd.to_datetime(data_ate) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)  # Incluir todo o dia final
+            data_ate_ts = pd.to_datetime(data_ate) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
             
-            # Filtrar o dataframe principal para o dashboard (CORRIGIDO)
+            # Filtrar o dataframe principal para o dashboard
             if ignore_date:
                 df_leads_dash = df_leads_with_dates.copy()
             else:
@@ -807,6 +827,8 @@ if page == "📈 Dashboards e Relatórios":
                     # Exibição da tabela final formatada
                     display_export_df = filtered_export_df.copy()
                     display_export_df["Valor"] = display_export_df["Valor"].apply(lambda v: f"R$ {v:,.2f}")
+                    # Formatar a data para exibição
+                    display_export_df["Data Contato"] = display_export_df["Data Contato"].apply(format_br_date)
                     st.dataframe(display_export_df[[
                         "Nome", "Data Contato", "Material de Interesse", "Valor", 
                         "Status Consulta", "Status Cirurgia", "Observações", "Criado Por", "Criado Em"
@@ -824,7 +846,7 @@ if page == "📈 Dashboards e Relatórios":
                         use_container_width=True
                     )
 
-# 2. GERENCIADOR DE LEADS
+# 2. GERENCIADOR DE LEADS (COM DATAS FORMATADAS)
 elif page == "🗂️ Gerenciador de Leads":
     st.title("🗂️ Gerenciador de Leads")
     st.markdown("Visualize, busque, edite e gerencie as informações de leads.")
@@ -872,12 +894,16 @@ elif page == "🗂️ Gerenciador de Leads":
             badge_c = render_status_badge(row["Status Consulta"])
             badge_s = render_status_badge(row["Status Cirurgia"])
             
+            # Formatar a data para exibição
+            data_formatada = format_br_date(row["Data Contato"])
+            
             with st.expander(f"👤 {lead_name} — {row['Material de Interesse']} (R$ {float(row['Valor']):,.2f})", expanded=(st.session_state.edit_lead_id == lead_id)):
                 # Detalhamento do Lead em Colunas
                 col_info1, col_info2, col_info3 = st.columns(3)
                 
                 with col_info1:
-                    st.markdown(f"**Data de Contato:** {row['Data Contato']}")
+                    # Usar data formatada aqui
+                    st.markdown(f"**Data de Contato:** {data_formatada}")
                     st.markdown(f"**Material de Interesse:** {row['Material de Interesse']}")
                     st.markdown(f"**Valor do Lead:** R$ {float(row['Valor']):,.2f}")
                     
@@ -889,8 +915,11 @@ elif page == "🗂️ Gerenciador de Leads":
                     st.markdown(badge_s, unsafe_allow_html=True)
                     
                 with col_info3:
-                    st.markdown(f"**Criado por:** {row['Criado Por']} ({row['Criado Em']})")
-                    st.markdown(f"**Atualizado por:** {row['Atualizado Por']} ({row['Atualizado Em']})")
+                    # Formatar as datas de criação e atualização também
+                    criado_em_formatado = format_br_date(row["Criado Em"]) if pd.notna(row["Criado Em"]) else "Data não informada"
+                    atualizado_em_formatado = format_br_date(row["Atualizado Em"]) if pd.notna(row["Atualizado Em"]) else "Data não informada"
+                    st.markdown(f"**Criado por:** {row['Criado Por']} ({criado_em_formatado})")
+                    st.markdown(f"**Atualizado por:** {row['Atualizado Por']} ({atualizado_em_formatado})")
                     
                 st.markdown(f"**Observações:** \n\n {row['Observações'] if row['Observações'] else '*(Sem observações)*'}")
                 
@@ -943,15 +972,12 @@ elif page == "🗂️ Gerenciador de Leads":
                     with st.form(key=f"form_edit_{lead_id}"):
                         # Converter a data de string para date object para o date_input
                         try:
-                            date_obj = pd.to_datetime(
-                                str(row["Data Contato"]).strip(),
-                                errors="coerce",
-                                utc=True
-                            )
+                            # Tentar converter a data do formato DD-MM-YYYY
+                            date_obj = parse_date_safely(str(row["Data Contato"]).strip())
                             if pd.isna(date_obj):
                                 raise ValueError("Data inválida")
-                            if date_obj.tz is not None:
-                                date_obj = date_obj.tz_convert(None)
+                            if hasattr(date_obj, 'tz') and date_obj.tz is not None:
+                                date_obj = date_obj.tz_localize(None)
                             date_obj = date_obj.date()
                         except Exception:
                             date_obj = datetime.today().date()
@@ -1076,6 +1102,10 @@ elif page == "📜 Log de Alterações" and current_user['role'] == "Admin":
     if df_logs.empty:
         st.info("Nenhum registro de log encontrado.")
     else:
+        # Formatar as datas dos logs
+        if "Data/Hora" in df_logs.columns:
+            df_logs["Data/Hora"] = df_logs["Data/Hora"].apply(format_br_date)
+        
         # Filtros para os Logs
         col_fl1, col_fl2, col_fl3 = st.columns([1, 1, 2])
         
