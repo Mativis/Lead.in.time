@@ -49,6 +49,33 @@ def render_origin_badge(origin: str) -> str:
     }
     return f'🎯 {origin}'
 
+PROCEDURE_ALIASES = {
+    "lifting": "Face Lifting",
+    "face lifting": "Face Lifting",
+    "blefaroplastia": "Blefaroplastia",
+    "rinoplastia": "Rinoplastia",
+    "rinoplastia primaria": "Rinoplastia Primária",
+    "rinoplastia revisional": "Rinoplastia Revisional",
+    "protese de mento": "Prótese de Mento",
+    "protese de silicone": "Prótese de Silicone",
+    "lentes de contato": "Lentes de Contato",
+    "lente de contato": "Lentes de Contato",
+}
+
+def normalize_material(value):
+    """Normaliza o campo Material de Interesse para agrupamento consistente."""
+    if pd.isna(value) or not value:
+        return value
+    text = str(value).strip()
+    import re
+    text = re.sub(r'^[^a-zA-Z]+', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    text = text.title()
+    lower = text.lower()
+    if lower in PROCEDURE_ALIASES:
+        return PROCEDURE_ALIASES[lower]
+    return text
+
 # Configuração da página Streamlit
 st.set_page_config(
     page_title="Lead.in.time - CRM de Leads",
@@ -402,6 +429,9 @@ except Exception as e:
     st.error(f"Erro ao carregar banco de dados: {e}")
     st.info("Caso queira reconfigurar o acesso à planilha, remova os arquivos `web_app_url.txt` e `auth_token.txt` locais.")
     st.stop()
+
+if not df_leads.empty and "Material de Interesse" in df_leads.columns:
+    df_leads["Material de Interesse"] = df_leads["Material de Interesse"].apply(normalize_material)
 
 # --- CONTROLE DE PÁGINAS ---
 
