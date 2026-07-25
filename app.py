@@ -1001,14 +1001,16 @@ elif page == "🗂️ Gerenciador de Leads":
     st.markdown("Visualize, busque, edite e gerencie as informações de leads.")
     
     # Campo de busca e filtros rápidos
-    col_s1, col_s2, col_s3, col_s4 = st.columns([2, 1, 1, 1])
+    col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns([2, 1, 1, 1, 1])
     with col_s1:
         search_query = st.text_input("🔍 Buscar lead por Nome ou Observação", placeholder="Digite para buscar...")
     with col_s2:
-        status_c_filter = st.selectbox("Status Consulta", ["Todos", "Pendente", "Realizado", "Não realizado"])
+        procedimento_query = st.text_input("🔍 Buscar por Procedimento", placeholder="Ex: Prótese, Lentes...")
     with col_s3:
-        status_s_filter = st.selectbox("Status Cirurgia", ["Todos", "Pendente", "Realizado", "Não realizado"])
+        status_c_filter = st.selectbox("Status Consulta", ["Todos", "Pendente", "Realizado", "Não realizado"])
     with col_s4:
+        status_s_filter = st.selectbox("Status Cirurgia", ["Todos", "Pendente", "Realizado", "Não realizado"])
+    with col_s5:
         origem_filter = st.selectbox("Origem", ["Todas", "Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"])
         
     # Aplicar filtros
@@ -1019,6 +1021,12 @@ elif page == "🗂️ Gerenciador de Leads":
         filtered_df = filtered_df[
             filtered_df["Nome"].str.lower().str.contains(query) | 
             filtered_df["Observações"].str.lower().str.contains(query)
+        ]
+
+    if procedimento_query:
+        proc_query = procedimento_query.lower()
+        filtered_df = filtered_df[
+            filtered_df["Material de Interesse"].str.lower().str.contains(proc_query)
         ]
         
     if status_c_filter != "Todos":
