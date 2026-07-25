@@ -487,6 +487,14 @@ if page == "📈 Dashboards e Relatórios":
                 show_origin_stats = st.checkbox("Mostrar estatísticas por origem", value=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
+            # Filtro de Doutor
+            st.markdown("<div class='form-container' style='margin-bottom: 25px;'>", unsafe_allow_html=True)
+            st.subheader("👨‍⚕️ Filtro por Doutor")
+            doutores_dash = sorted([d for d in df_leads_with_dates["Doutor"].dropna().unique() if str(d).strip()])
+            doutor_dash_options = ["Todos"] + doutores_dash
+            doutor_dash_filter = st.selectbox("Doutor", doutor_dash_options)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
             # Converter os valores do date_input para Timestamp
             data_de_ts = pd.to_datetime(data_de)
             data_ate_ts = pd.to_datetime(data_ate) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
@@ -503,6 +511,10 @@ if page == "📈 Dashboards e Relatórios":
             # Aplicar filtro de origem
             if origem_filter != "Todas":
                 df_leads_dash = df_leads_dash[df_leads_dash["Origem"] == origem_filter]
+            
+            # Aplicar filtro de doutor
+            if doutor_dash_filter != "Todos":
+                df_leads_dash = df_leads_dash[df_leads_dash["Doutor"] == doutor_dash_filter]
             
             if df_leads_dash.empty:
                 st.warning("Nenhum lead encontrado para o período e origem selecionados. Tente ampliar os filtros.")
@@ -527,10 +539,11 @@ if page == "📈 Dashboards e Relatórios":
                 taxa_cirurgia_consulta = (cirurgias_realizadas / consultas_realizadas * 100) if consultas_realizadas > 0 else 0.0
                 
                 # Inicializar Abas
-                tab_resumo, tab_graficos, tab_procedimentos, tab_origem, tab_exportar = st.tabs([
+                tab_resumo, tab_graficos, tab_procedimentos, tab_doutor, tab_origem, tab_exportar = st.tabs([
                     "📊 Resumo & Funil", 
                     "📈 Gráficos & Tendências", 
                     "🏷️ Desempenho por Procedimento",
+                    "👨‍⚕️ Desempenho por Doutor",
                     "🎯 Análise por Origem",
                     "📥 Relatório & Exportação"
                 ])
@@ -815,7 +828,79 @@ if page == "📈 Dashboards e Relatórios":
                         
                         st.dataframe(df_material_display, use_container_width=True)
                 
-                # --- TAB 4: ANÁLISE POR ORIGEM ---
+                # --- TAB 4: DESEMPENHO POR DOUTOR ---
+                with tab_doutor:
+                    st.subheader("Desempenho por Doutor")
+                    st.markdown("Análise de volumes, faturamento e taxa de conversão por doutor responsável.")
+                    
+                    df_leads_doutor = df_leads_dash.copy()
+                    if "Doutor" not in df_leads_doutor.columns:
+                        df_leads_doutor["Doutor"] = ""
+                    df_leads_doutor["Doutor"] = df_leads_doutor["Doutor"].fillna("").apply(lambda x: str(x).strip())
+                    df_com_doutor = df_leads_doutor[df_leads_doutor["Doutor"] != ""]
+                    
+                    if df_com_doutor.empty:
+                        st.info("Nenhum lead com doutor cadastrado encontrado no período selecionado.")
+                    else:
+                        df_doutor = df_com_doutor.groupby("Doutor").agg(
+                            Total_Leads=("ID", "count"),
+                            Valor_Potencial=("Valor", "sum")
+                        ).reset_index()
+                        
+                        cirurgias_realizadas_doutor = df_com_doutor[df_com_doutor["Status Cirurgia"] == "Realizado"].groupby("Doutor").agg(
+                            Cirurgias_Realizadas=("Status Cirurgia", "count"),
+                            Faturamento_Confirmado=("Valor", "sum")
+                        ).reset_index()
+                        
+                        df_doutor = pd.merge(df_doutor, cirurgias_realizadas_doutor, on="Doutor", how="left").fillna(0.0)
+                        
+                        df_doutor["Taxa_Conversao"] = (df_doutor["Cirurgias_Realizadas"] / df_doutor["Total_Leads"] * 100)
+                        df_doutor["Ticket_Medio"] = (df_doutor["Valor_Potencial"] / df_doutor["Total_Leads"])
+                        
+                        df_doutor = df_doutor.sort_values(by="Faturamento_Confirmado", ascending=False).reset_index(drop=True)
+                        
+                        col_d1, col_d2 = st.columns(2)
+                        
+                        with col_d1:
+                            chart_doutor_leads = alt.Chart(df_doutor).mark_bar(cornerRadiusEnd=4).encode(
+                                y=alt.Y("Doutor:N", title="Doutor", sort="-x"),
+                                x=alt.X("Total_Leads:Q", title="Total de Leads"),
+                                color=alt.value("#3b82f6"),
+                                tooltip=["Doutor", "Total_Leads", "Valor_Potencial", "Taxa_Conversao"]
+                            ).properties(
+                                title="Volume de Leads por Doutor",
+                                height=280
+                            )
+                            st.altair_chart(chart_doutor_leads, use_container_width=True)
+                        
+                        with col_d2:
+                            chart_doutor_fat = alt.Chart(df_doutor).mark_bar(cornerRadiusEnd=4).encode(
+                                y=alt.Y("Doutor:N", title="Doutor", sort="-x"),
+                                x=alt.X("Faturamento_Confirmado:Q", title="Faturamento Confirmado (R$)"),
+                                color=alt.value("#10b981"),
+                                tooltip=["Doutor", "Faturamento_Confirmado", "Cirurgias_Realizadas", "Taxa_Conversao"]
+                            ).properties(
+                                title="Faturamento Confirmado por Doutor",
+                                height=280
+                            )
+                            st.altair_chart(chart_doutor_fat, use_container_width=True)
+                        
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        df_doutor_display = df_doutor.copy()
+                        df_doutor_display["Valor_Potencial"] = df_doutor_display["Valor_Potencial"].apply(lambda v: f"R$ {v:,.2f}")
+                        df_doutor_display["Faturamento_Confirmado"] = df_doutor_display["Faturamento_Confirmado"].apply(lambda v: f"R$ {v:,.2f}")
+                        df_doutor_display["Ticket_Medio"] = df_doutor_display["Ticket_Medio"].apply(lambda v: f"R$ {v:,.2f}")
+                        df_doutor_display["Taxa_Conversao"] = df_doutor_display["Taxa_Conversao"].apply(lambda v: f"{v:.1f}%")
+                        
+                        df_doutor_display.columns = [
+                            "Doutor", "Total Leads", "Valor Potencial", 
+                            "Cirurgias Concluídas", "Faturamento Realizado", "Taxa Conversão", "Ticket Médio"
+                        ]
+                        
+                        st.dataframe(df_doutor_display, use_container_width=True)
+                
+                # --- TAB 5: ANÁLISE POR ORIGEM ---
                 with tab_origem:
                     st.subheader("🎯 Análise de Performance por Origem do Lead")
                     st.markdown("Compare o desempenho de cada canal de aquisição e identifique as origens mais rentáveis.")
@@ -926,7 +1011,7 @@ if page == "📈 Dashboards e Relatórios":
                             </div>
                             """, unsafe_allow_html=True)
                 
-                # --- TAB 5: RELATÓRIO & EXPORTAÇÃO ---
+                # --- TAB 6: RELATÓRIO & EXPORTAÇÃO ---
                 with tab_exportar:
                     st.subheader("Exportador Avançado de Dados")
                     
@@ -956,7 +1041,7 @@ if page == "📈 Dashboards e Relatórios":
                         )
                     
                     # Filtros adicionais de busca e valor
-                    col_ef4, col_ef5, col_ef6 = st.columns([2, 2, 2])
+                    col_ef4, col_ef5, col_ef6, col_ef7 = st.columns([2, 2, 2, 2])
                     with col_ef4:
                         export_busca = st.text_input("🔍 Buscar por nome do Lead", placeholder="Digite um nome para filtrar...", key="exp_b")
                     with col_ef5:
@@ -981,6 +1066,14 @@ if page == "📈 Dashboards e Relatórios":
                             default=origens_unicas,
                             key="exp_o"
                         )
+                    with col_ef7:
+                        doutores_export = sorted([d for d in df_leads_dash["Doutor"].dropna().unique() if str(d).strip()])
+                        export_doutor = st.multiselect(
+                            "Filtrar por Doutor", 
+                            doutores_export, 
+                            default=doutores_export,
+                            key="exp_d"
+                        )
                     
                     # Filtragem no DataFrame
                     filtered_export_df = df_leads_dash[
@@ -988,6 +1081,7 @@ if page == "📈 Dashboards e Relatórios":
                         (df_leads_dash["Status Cirurgia"].isin(export_cirurgia)) &
                         (df_leads_dash["Material de Interesse"].isin(export_material)) &
                         (df_leads_dash["Origem"].isin(export_origem)) &
+                        (df_leads_dash["Doutor"].isin(export_doutor)) &
                         (df_leads_dash["Valor"] >= export_valores[0]) &
                         (df_leads_dash["Valor"] <= export_valores[1])
                     ]
@@ -1007,7 +1101,7 @@ if page == "📈 Dashboards e Relatórios":
                     
                     # Selecionar colunas para exibição
                     cols_to_display = ["Nome", "Data Contato", "Material de Interesse", "Valor", 
-                                     "Status Consulta", "Status Cirurgia", "Origem", "Observações", 
+                                     "Status Consulta", "Status Cirurgia", "Origem", "Doutor", "Observações", 
                                      "Criado Por", "Criado Em"]
                     available_cols = [col for col in cols_to_display if col in display_export_df.columns]
                     
@@ -1031,16 +1125,20 @@ elif page == "🗂️ Gerenciador de Leads":
     st.markdown("Visualize, busque, edite e gerencie as informações de leads.")
     
     # Campo de busca e filtros rápidos
-    col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns([2, 1, 1, 1, 1])
+    col_s1, col_s2, col_s3, col_s4, col_s5, col_s6 = st.columns([2, 1, 1, 1, 1, 1])
     with col_s1:
         search_query = st.text_input("🔍 Buscar lead por Nome ou Observação", placeholder="Digite para buscar...")
     with col_s2:
         procedimento_query = st.text_input("🔍 Buscar por Procedimento", placeholder="Ex: Prótese, Lentes...")
     with col_s3:
-        status_c_filter = st.selectbox("Status Consulta", ["Todos", "Pendente", "Realizado", "Não realizado"])
+        doutores_unicos = sorted([d for d in df_leads["Doutor"].dropna().unique() if str(d).strip()])
+        doutor_options = ["Todos"] + doutores_unicos
+        doutor_filter = st.selectbox("Doutor", doutor_options)
     with col_s4:
-        status_s_filter = st.selectbox("Status Cirurgia", ["Todos", "Pendente", "Realizado", "Não realizado"])
+        status_c_filter = st.selectbox("Status Consulta", ["Todos", "Pendente", "Realizado", "Não realizado"])
     with col_s5:
+        status_s_filter = st.selectbox("Status Cirurgia", ["Todos", "Pendente", "Realizado", "Não realizado"])
+    with col_s6:
         origem_filter = st.selectbox("Origem", ["Todas", "Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"])
         
     # Aplicar filtros
@@ -1067,6 +1165,9 @@ elif page == "🗂️ Gerenciador de Leads":
     
     if origem_filter != "Todas":
         filtered_df = filtered_df[filtered_df["Origem"] == origem_filter]
+    
+    if doutor_filter != "Todos":
+        filtered_df = filtered_df[filtered_df["Doutor"] == doutor_filter]
         
     if filtered_df.empty:
         st.info("Nenhum lead encontrado com os filtros aplicados.")
@@ -1090,7 +1191,8 @@ elif page == "🗂️ Gerenciador de Leads":
             # Formatar a data para exibição
             data_formatada = format_br_date(row["Data Contato"])
             
-            with st.expander(f"👤 {lead_name} — {row['Material de Interesse']} (R$ {float(row['Valor']):,.2f}) {badge_o}", expanded=(st.session_state.edit_lead_id == lead_id)):
+            doutor_label = f" | Dr(a). {row['Doutor']}" if pd.notna(row.get("Doutor")) and str(row["Doutor"]).strip() else ""
+            with st.expander(f"👤 {lead_name} — {row['Material de Interesse']} (R$ {float(row['Valor']):,.2f}){doutor_label} {badge_o}", expanded=(st.session_state.edit_lead_id == lead_id)):
                 # Detalhamento do Lead em Colunas
                 col_info1, col_info2, col_info3 = st.columns(3)
                 
@@ -1101,6 +1203,8 @@ elif page == "🗂️ Gerenciador de Leads":
                     st.markdown(f"**Valor do Lead:** R$ {float(row['Valor']):,.2f}")
                     if pd.notna(row.get("Origem")):
                         st.markdown(f"**Origem:** {row['Origem']}")
+                    if pd.notna(row.get("Doutor")) and str(row["Doutor"]).strip():
+                        st.markdown(f"**Doutor:** {row['Doutor']}")
                     
                 with col_info2:
                     st.markdown(f"**Status de Consulta:**")
@@ -1188,6 +1292,8 @@ elif page == "🗂️ Gerenciador de Leads":
                             index=["Instagram (Trafego Orgânico)", "Meta Ads (Trafego Pago)", "Indicação"].index(row["Origem"] if pd.notna(row["Origem"]) else "Instagram (Trafego Orgânico)")
                         )
                         
+                        val_doutor = st.text_input("Doutor", value=str(row["Doutor"]) if pd.notna(row["Doutor"]) else "")
+                        
                         val_consulta = st.selectbox(
                             "Status de Consulta", 
                             ["Pendente", "Realizado", "Não realizado"], 
@@ -1219,6 +1325,7 @@ elif page == "🗂️ Gerenciador de Leads":
                                         "Material de Interesse": val_material,
                                         "Valor": val_valor,
                                         "Origem": val_origem,
+                                        "Doutor": val_doutor,
                                         "Status Consulta": val_consulta,
                                         "Status Cirurgia": val_cirurgia,
                                         "Observações": val_obs
@@ -1259,6 +1366,8 @@ elif page == "➕ Adicionar Lead":
                 help="Selecione o canal através do qual o lead foi captado"
             )
             
+            doutor_lead = st.text_input("Doutor", placeholder="Nome do doutor responsável...")
+            
             col_s1, col_s2 = st.columns(2)
             with col_s1:
                 status_c = st.selectbox("Status de Consulta", ["Pendente", "Realizado", "Não realizado"])
@@ -1283,11 +1392,12 @@ elif page == "➕ Adicionar Lead":
                                 data_contato=data_formatted,
                                 material=material_lead,
                                 valor=valor_lead,
-                                origem=origem_lead,  # Adicionando a origem
+                                origem=origem_lead,
                                 status_consulta=status_c,
                                 status_cirurgia=status_s,
                                 observacoes=obs_lead,
-                                criado_por=current_user["username"]
+                                criado_por=current_user["username"],
+                                doutor=doutor_lead
                             )
                             
                             st.cache_data.clear() # Limpa cache do Streamlit

@@ -177,7 +177,7 @@ class DatabaseManager:
         if not records:
             return pd.DataFrame(columns=[
                 'ID', 'Nome', 'Data Contato', 'Material de Interesse', 'Valor', 
-                'Status Consulta', 'Status Cirurgia', 'Observações', 'Origem',
+                'Status Consulta', 'Status Cirurgia', 'Observações', 'Origem', 'Doutor',
                 'Criado Por', 'Criado Em', 'Atualizado Por', 'Atualizado Em'
             ])
             
@@ -188,18 +188,23 @@ class DatabaseManager:
         if 'Origem' not in df.columns:
             df['Origem'] = 'Não informada'
             
+        # Garantir que a coluna Doutor exista
+        if 'Doutor' not in df.columns:
+            df['Doutor'] = ''
+            
         return df
 
     def add_lead(self, nome: str, data_contato: str, material: str, valor: float, 
                  origem: str, status_consulta: str, status_cirurgia: str, 
-                 observacoes: str, criado_por: str) -> str:
-        """Adiciona um novo lead na aba 'leads' com suporte a origem."""
+                 observacoes: str, criado_por: str, doutor: str = "") -> str:
+        """Adiciona um novo lead na aba 'leads' com suporte a origem e doutor."""
         payload = {
             "nome": nome,
             "data_contato": data_contato,
             "material": material,
             "valor": float(valor),
-            "origem": origem,  # Novo campo de origem
+            "origem": origem,
+            "doutor": doutor,
             "status_consulta": status_consulta,
             "status_cirurgia": status_cirurgia,
             "observacoes": observacoes,
